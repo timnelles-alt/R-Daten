@@ -1,5 +1,6 @@
 # ==============================================================================
 # MASTER-SKRIPT: SUBSTITUTIONSÄNGSTE DURCH KI AM ARBEITSPLATZ
+# Bachelorarbeit: Empirische Analyse (N = 152 / N = 145)
 # ==============================================================================
 
 # 1. PAKETE LADEN
@@ -20,6 +21,7 @@ ds <- read.csv("data.csv",
                fileEncoding = "UTF-16LE", 
                header = TRUE)
 
+# Filter: Nur vollständig ausgefüllte Fragebögen von Angestellten (1) und Beamten (2)
 ds_clean <- ds %>% 
   filter(STATUS == "complete", FR01 %in% c(1, 2))
 
@@ -56,7 +58,7 @@ ds_clean <- ds_clean %>%
     FR37_05 = "Angst: Sorge um langfristige Relevanz des Berufs"
   )
 
-# Alters-Ausreißer bereinigen
+# Alters-Ausreißer bereinigen (> 70 Jahre)
 ds_clean$Alter[ds_clean$Alter > 70] <- NA
 
 # 3. FAKTOREN ALS ECHTE KATEGORIALE VARIABLEN DEFINIEREN
@@ -75,17 +77,18 @@ ds_clean$Branche_Name <- factor(ds_clean$Branche, levels = 1:6,
 ds_clean$Unternehmensgroesse_Name <- factor(ds_clean$Unternehmensgroesse, levels = 1:4, 
                                             labels = c("Klein (<50)", "Mittel (50-499)", "Groß (500-1999)", "Konzern (>=2000)"))
 
-ds_clean$Regionstyp_Name <- factor(ds_clean$Regionstyp, levels = 1:2, 
-                                   labels = c("Urban", "Ländlich"))
-
 ds_clean$Einkommen_Name <- factor(ds_clean$Einkommen, levels = 1:6, 
                                   labels = c("<1.500€", "1.500€-2.500€", "2.500€-4.000€", "4.000€-6.000€", ">=6.000€", "Keine Angabe"))
+
+# Explorativ erhobene Variable (fließt nicht in OLS ein)
+ds_clean$Regionstyp_Name <- factor(ds_clean$Regionstyp, levels = 1:2, 
+                                   labels = c("Urban", "Ländlich"))
 
 # 4. SKALENINDIZES BERECHNEN (Mittelwertindizes)
 ds_clean <- ds_clean %>%
   mutate(
     Routinegrad = rowMeans(across(c(FR34_01, FR34_02, FR34_03)), na.rm = TRUE),
-    KI_Nutzungshaeufigkeit = FR35_01, 
+    KI_Nutzungshaeufigkeit = FR35_01, # Theoriekonformes Single-Item (TAM/H3)
     Systemvertrauen = rowMeans(across(c(FR36_01, FR36_02, FR36_03, FR36_04)), na.rm = TRUE),
     Substitutionsangst = rowMeans(across(c(FR37_01, FR37_02, FR37_03, FR37_04, FR37_05)), na.rm = TRUE)
   )
@@ -103,11 +106,10 @@ frq(ds_clean$Branche_Name)
 frq(ds_clean$Unternehmensgroesse_Name)
 frq(ds_clean$Einkommen_Name)
 
-# Auswahl der kategorialen Variablen für den Export (JETZT VOLLSTÄNDIG)
+# Export der soziodemografischen Tabelle (Tabelle 1)
 stichproben_merkmale <- ds_clean %>% 
   select(Erwerbsstatus_Name, Geschlecht_Name, Bildung_Name, Branche_Name, Unternehmensgroesse_Name, Einkommen_Name)
 
-# Automatische Erstellung der soziodemografischen Gesamttabelle für Word
 view_df(stichproben_merkmale, 
         show.frq = TRUE, 
         show.prc = TRUE, 
@@ -162,27 +164,28 @@ ggcorrplot(matrix_ergebnis$r, p.mat = matrix_ergebnis$p, sig.level = 0.05, insig
 # ==============================================================================
 # 9. HIERARCHISCHE REGRESSIONSANALYSEN & GEPRÜFTE REGRESSIONSDIAGNOSTIK
 # ==============================================================================
-modell_1 <- lm(Substitutionsangst ~ Alter + Geschlecht_Name + Einkommen_Name + Unternehmensgroesse_Name, data = ds_clean)
+# MODELL 1 (Kontrollmodell mit allen 5 soziodemografischen & organisationalen Kontrollen)
+modell_1 <- lm(Substitutionsangst ~ Alter + Geschlecht_Name + Einkommen_Name + Unternehmensgroesse_Name + Branche_Name, data = ds_clean)
 summary(modell_1)
 
-modell_2_final <- lm(Substitutionsangst ~ Alter + Geschlecht_Name + Einkommen_Name + Unternehmensgroesse_Name + Bildung_Name + Branche_Name + Routinegrad + KI_Nutzungshaeufigkeit + Systemvertrauen, data = ds_clean)
+# MODELL 2 (Gesamtmodell mit Hauptprädiktoren)
+modell_2_final <- lm(Substitutionsangst ~ Alter + Geschlecht_Name + Einkommen_Name + Unternehmensgroesse_Name + Branche_Name + Bildung_Name + Routinegrad + KI_Nutzungshaeufigkeit + Systemvertrauen, data = ds_clean)
 summary(modell_2_final)
 
-# Voraussetzungen der Regression prüfen
+# Voraussetzungen der OLS-Regression prüfen
 vif(modell_2_final)
 bptest(modell_2_final)
 dwtest(modell_2_final)
 shapiro.test(residuals(modell_2_final))
-plot(modell_2_final)
 
-# ERSTELLUNG DER SOWI-TABELLE DIREKT FÜR WORD
+# Export der Regressionstabelle (Tabelle 2)
 tab_model(modell_1, modell_2_final, 
           show.ci = FALSE, 
           show.se = TRUE, 
           p.style = "stars", 
           file = "Regressions_Tabelle_Bachelorarbeit.doc")
 
-# ABBILDUNG 4: AUFGERÄUMTER KOEFFIZIENTENPLOT (Fokus rein auf die Haupthypothesen)
+# ABBILDUNG 4: KOEFFIZIENTENPLOT (Haupthypothesen)
 plot_model(modell_2_final, 
            type = "est", 
            sort.est = TRUE, 
@@ -192,7 +195,7 @@ plot_model(modell_2_final,
            vline.color = "black", 
            title = "", 
            dot.size = 2.5, 
-           line.size = 0.8,
+           line.size = 0.8, 
            terms = c("Routinegrad", "KI_Nutzungshaeufigkeit", "Systemvertrauen")) + 
   theme_classic(base_size = 13) + 
   labs(x = "", y = "Regressionskoeffizienten (B) mit 95%-Konfidenzintervallen") + 
@@ -209,7 +212,7 @@ plot_model(modell_2_final,
 leveneTest(Substitutionsangst ~ Erwerbsstatus_Name, data = ds_clean)
 t.test(Substitutionsangst ~ Erwerbsstatus_Name, data = ds_clean, var.equal = FALSE)
 
-# Deskriptive Kennzahlen für das Textkapitel
+# Deskriptive Kennzahlen
 ds_clean %>% 
   group_by(Erwerbsstatus_Name) %>% 
   summarise(Anzahl = n(), 
@@ -219,11 +222,10 @@ ds_clean %>%
 # ABBILDUNG 5: BOXPLOT (STATUS-VERGLEICH)
 ggplot(ds_clean, aes(x = Erwerbsstatus_Name, y = Substitutionsangst, color = Erwerbsstatus_Name, fill = Erwerbsstatus_Name)) + 
   geom_boxplot(alpha = 0.2, outlier.shape = NA, width = 0.5, color = "black", linewidth = 0.6) + 
-  geom_jitter(width = 0.15, alpha = 0.5, size = 1.5) +        
-  stat_summary(fun = mean, geom = "point", shape = 23, size = 3.5, fill = "white", color = "black", stroke = 1) +
+  geom_jitter(width = 0.15, alpha = 0.5, size = 1.5) +         
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3.5, fill = "white", color = "black", stroke = 1) + 
   scale_color_manual(values = c("#2C3E50", "#E74C3C")) + 
-  scale_fill_manual(values = c("#2C3E50", "#E74C3C")) +
+  scale_fill_manual(values = c("#2C3E50", "#E74C3C")) + 
   theme_classic(base_size = 13) + 
   labs(x = "Erwerbsstatus", y = "Substitutionsangst (Skalenmittelwert)") + 
   theme(legend.position = "none", axis.text = element_text(color = "black", face = "bold"), axis.title = element_text(face = "bold"))
-
